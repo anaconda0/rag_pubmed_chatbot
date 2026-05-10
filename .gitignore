@@ -1,0 +1,41 @@
+# Python cache files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environments
+venv/
+.venv/
+env/
+.env/
+
+# Environment variables and local secrets
+.env
+.env.local
+
+# Logs and runtime output
+logs/
+*.log
+
+# Gradio local runtime files
+.gradio/
+
+# Jupyter notebook checkpoints
+.ipynb_checkpoints/
+
+# Large local datasets
+# The Kaggle CSV files are intentionally not committed.
+# One CSV is larger than GitHub's 100 MB single-file limit.
+data/*.csv
+
+# Local model/cache folders if created inside the project
+models/
+cache/
+.cache/
+
+# OS/editor files
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
