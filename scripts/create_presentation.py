@@ -16,24 +16,37 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from PIL import Image, ImageDraw, ImageFont
 from pptx import Presentation
 from pptx.dml.color import RGBColor
 from pptx.enum.dml import MSO_LINE_DASH_STYLE
 from pptx.enum.shapes import MSO_AUTO_SHAPE_TYPE as SHAPE
 from pptx.enum.shapes import MSO_CONNECTOR
-from pptx.enum.text import MSO_ANCHOR, PP_ALIGN
+from pptx.enum.text import MSO_ANCHOR, MSO_AUTO_SIZE, PP_ALIGN
 from pptx.oxml.xmlchemy import OxmlElement
 from pptx.util import Inches, Pt
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 OUTPUT_DIR = PROJECT_ROOT / "presentation"
-OUTPUT_FILE = OUTPUT_DIR / "PubMed_RAG_Chatbot_Presentation.pptx"
+OUTPUT_FILE = OUTPUT_DIR / "PubMed_RAG_Chatbot_Presentation_Updated.pptx"
+ASSET_DIR = PROJECT_ROOT / "assets" / "presentation"
+AI_MEDICAL_IMAGE = ASSET_DIR / "ai_medical_visual.png"
+TERMINAL_IMAGE = ASSET_DIR / "terminal_ingestion_output.png"
+MONGODB_IMAGE = ASSET_DIR / "mongodb_collections_visual.png"
+GUI_SCREENSHOT = ASSET_DIR / "gradio_ui_screenshot.png"
+OUTPUT_SCREENSHOT = ASSET_DIR / "gradio_output_screenshot.png"
 
 REPO_URL = "https://github.com/anaconda0/rag_pubmed_chatbot"
 PROJECT_TITLE = "PubMed RAG Chatbot"
-PRESENTER_NAME = "Omar"
 UNIVERSITY_NAME = "Arab Academy for Science, Technology & Maritime Transport"
+TEAM_MEMBERS = [
+    ("Omar Medhat", "221004675"),
+    ("Nagham ElNoshokaty", "221006874"),
+    ("Yousef Ashraf", "221005207"),
+    ("Marwan Ashraf", "221005698"),
+    ("Farouk Faisal", "221006961"),
+]
 
 # 16:9 widescreen slide size.
 SLIDE_W = Inches(13.333)
@@ -99,6 +112,8 @@ def add_text(
     frame.margin_top = Inches(0.04)
     frame.margin_bottom = Inches(0.04)
     frame.vertical_anchor = valign
+    frame.word_wrap = True
+    frame.auto_size = MSO_AUTO_SIZE.TEXT_TO_FIT_SHAPE
 
     paragraph = frame.paragraphs[0]
     paragraph.text = text
@@ -130,6 +145,7 @@ def add_rich_text(
     frame.margin_right = Inches(0.05)
     frame.margin_top = Inches(0.02)
     frame.word_wrap = True
+    frame.auto_size = MSO_AUTO_SIZE.TEXT_TO_FIT_SHAPE
 
     for index, line in enumerate(lines):
         paragraph = frame.paragraphs[0] if index == 0 else frame.add_paragraph()
@@ -358,6 +374,200 @@ def add_screenshot_placeholder(
     top.line.fill.background()
 
 
+def pil_font(size: int, bold: bool = False) -> ImageFont.ImageFont:
+    """Load a clean Windows font for generated visual assets."""
+
+    font_name = "segoeuib.ttf" if bold else "segoeui.ttf"
+    try:
+        return ImageFont.truetype(font_name, size)
+    except OSError:
+        return ImageFont.load_default()
+
+
+def draw_glow_circle(
+    draw: ImageDraw.ImageDraw,
+    center: tuple[int, int],
+    radius: int,
+    color: tuple[int, int, int],
+) -> None:
+    """Draw layered circles to create a soft glow effect."""
+
+    x, y = center
+    for step in range(5, 0, -1):
+        alpha_radius = int(radius * step / 2.5)
+        shade = tuple(max(0, min(255, value // step + 12)) for value in color)
+        draw.ellipse(
+            (x - alpha_radius, y - alpha_radius, x + alpha_radius, y + alpha_radius),
+            outline=shade,
+            width=2,
+        )
+
+
+def create_ai_medical_visual(path: Path) -> None:
+    """Create a reusable AI-healthcare visual image for the deck."""
+
+    width, height = 1600, 900
+    image = Image.new("RGB", (width, height), (7, 15, 34))
+    draw = ImageDraw.Draw(image)
+
+    for y in range(height):
+        blend = y / height
+        r = int(7 + 7 * blend)
+        g = int(15 + 30 * blend)
+        b = int(34 + 58 * blend)
+        draw.line((0, y, width, y), fill=(r, g, b))
+
+    # Subtle circuit grid.
+    for x in range(0, width, 90):
+        draw.line((x, 0, x, height), fill=(13, 44, 78), width=1)
+    for y in range(0, height, 90):
+        draw.line((0, y, width, y), fill=(13, 44, 78), width=1)
+
+    # Medical cross with neural network nodes.
+    cx, cy = 1110, 360
+    draw_glow_circle(draw, (cx, cy), 155, (0, 220, 255))
+    draw.rounded_rectangle((cx - 42, cy - 170, cx + 42, cy + 170), radius=22, fill=(0, 160, 190))
+    draw.rounded_rectangle((cx - 170, cy - 42, cx + 170, cy + 42), radius=22, fill=(0, 220, 255))
+
+    nodes = [(170, 190), (320, 135), (465, 250), (250, 365), (490, 445), (360, 610)]
+    for start, end in zip(nodes, nodes[1:]):
+        draw.line((start, end), fill=(0, 180, 215), width=4)
+    for x, y in nodes:
+        draw.ellipse((x - 14, y - 14, x + 14, y + 14), fill=(45, 212, 191))
+        draw.ellipse((x - 5, y - 5, x + 5, y + 5), fill=(245, 250, 255))
+
+    # Heartbeat line.
+    heartbeat = [(125, 710), (260, 710), (300, 650), (345, 770), (405, 610), (465, 710), (760, 710)]
+    draw.line(heartbeat, fill=(0, 220, 255), width=7, joint="curve")
+
+    draw.text((110, 95), "AI Healthcare RAG", fill=(245, 250, 255), font=pil_font(58, True))
+    draw.text((113, 170), "PubMed abstracts + embeddings + retrieval", fill=(176, 197, 220), font=pil_font(30))
+    draw.text((118, 790), "Evidence-grounded answers", fill=(45, 212, 191), font=pil_font(28, True))
+
+    image.save(path)
+
+
+def create_terminal_visual(path: Path) -> None:
+    """Create a terminal-style ingestion screenshot visual."""
+
+    width, height = 1200, 700
+    image = Image.new("RGB", (width, height), (8, 16, 32))
+    draw = ImageDraw.Draw(image)
+    draw.rounded_rectangle((35, 35, width - 35, height - 35), radius=22, fill=(10, 27, 56), outline=(0, 220, 255), width=3)
+    draw.rectangle((35, 35, width - 35, 92), fill=(15, 35, 66))
+    for index, color in enumerate([(248, 113, 113), (251, 191, 36), (45, 212, 191)]):
+        x = 72 + index * 34
+        draw.ellipse((x, 55, x + 16, 71), fill=color)
+
+    lines = [
+        "$ python src/ingest.py --search obesity --limit 50",
+        "Rows matching 'obesity': 664",
+        "Detected main text/abstract column: abstractText",
+        "Loading sentence-transformers model...",
+        "Ingesting rows: 100%|==========| 50/50",
+        "Rows read: 50",
+        "Chunks created before duplicate checks: 96",
+        "Duplicate chunks skipped: 0",
+        "New chunks inserted into MongoDB: 96",
+    ]
+    y = 128
+    for index, line in enumerate(lines):
+        color = (0, 220, 255) if index == 0 else (245, 250, 255)
+        if "inserted" in line or "100%" in line:
+            color = (45, 212, 191)
+        draw.text((72, y), line, fill=color, font=pil_font(30 if index == 0 else 25))
+        y += 56
+
+    image.save(path)
+
+
+def create_mongodb_visual(path: Path) -> None:
+    """Create a MongoDB Compass-style collections visual."""
+
+    width, height = 1200, 700
+    image = Image.new("RGB", (width, height), (245, 250, 255))
+    draw = ImageDraw.Draw(image)
+    draw.rectangle((0, 0, width, 86), fill=(10, 27, 56))
+    draw.text((45, 25), "MongoDB Collections", fill=(45, 212, 191), font=pil_font(34, True))
+    draw.rounded_rectangle((45, 120, 350, 640), radius=18, fill=(232, 247, 243), outline=(45, 212, 191), width=3)
+    draw.text((76, 155), "rag_pubmed_chatbot", fill=(10, 27, 56), font=pil_font(24, True))
+
+    collections = ["pubmed_chunks", "conversation_memory", "indexes"]
+    for idx, item in enumerate(collections):
+        y = 220 + idx * 78
+        fill = (15, 118, 110) if idx == 0 else (255, 255, 255)
+        text_color = (255, 255, 255) if idx == 0 else (10, 27, 56)
+        draw.rounded_rectangle((72, y, 320, y + 48), radius=10, fill=fill, outline=(143, 211, 201), width=2)
+        draw.text((94, y + 12), item, fill=text_color, font=pil_font(19, idx == 0))
+
+    draw.rounded_rectangle((395, 120, 1150, 640), radius=18, fill=(255, 255, 255), outline=(216, 222, 230), width=3)
+    draw.text((435, 158), "pubmed_chunks document", fill=(10, 27, 56), font=pil_font(28, True))
+    fields = [
+        '"text": "medical abstract chunk..."',
+        '"embedding": [0.021, -0.113, 0.402, ...]',
+        '"chunk_hash": "sha256..."',
+        '"metadata": { "pmid", "title", "labels" }',
+        '"created_at": ISODate(...)',
+    ]
+    for idx, field in enumerate(fields):
+        y = 230 + idx * 64
+        draw.rounded_rectangle((435, y, 1088, y + 40), radius=8, fill=(241, 245, 249), outline=(216, 222, 230), width=1)
+        draw.text((458, y + 9), field, fill=(15, 35, 66), font=pil_font(20))
+
+    image.save(path)
+
+
+def create_visual_assets() -> None:
+    """Create generated images used by the presentation."""
+
+    ASSET_DIR.mkdir(parents=True, exist_ok=True)
+    create_ai_medical_visual(AI_MEDICAL_IMAGE)
+    create_terminal_visual(TERMINAL_IMAGE)
+    create_mongodb_visual(MONGODB_IMAGE)
+
+
+def add_image_fit(
+    slide,
+    path: Path,
+    x: float,
+    y: float,
+    w: float,
+    h: float,
+    title: str = "",
+) -> bool:
+    """Add an image inside a bounded area without stretching it."""
+
+    if not path.exists():
+        return False
+
+    add_panel(slide, x, y, w, h, title=title)
+
+    with Image.open(path) as image:
+        image_w, image_h = image.size
+
+    image_ratio = image_w / image_h
+    box_ratio = w / h
+
+    if image_ratio >= box_ratio:
+        pic_w = w - 0.28
+        pic_h = pic_w / image_ratio
+    else:
+        pic_h = h - (0.72 if title else 0.28)
+        pic_w = pic_h * image_ratio
+
+    pic_x = x + (w - pic_w) / 2
+    pic_y = y + (h - pic_h) / 2 + (0.12 if title else 0)
+
+    slide.shapes.add_picture(
+        str(path),
+        Inches(pic_x),
+        Inches(pic_y),
+        width=Inches(pic_w),
+        height=Inches(pic_h),
+    )
+    return True
+
+
 def add_flow_block(slide, title: str, detail: str, x: float, y: float, w: float, h: float, icon: str) -> None:
     """Add a block for flow diagrams."""
 
@@ -403,20 +613,14 @@ def create_cover(prs: Presentation) -> None:
     slide = prs.slides.add_slide(prs.slide_layouts[6])
     add_background(slide)
 
-    # Large medical cross made from editable rectangles.
-    cross_h = slide.shapes.add_shape(SHAPE.RECTANGLE, Inches(9.8), Inches(2.0), Inches(1.8), Inches(0.46))
-    set_fill(cross_h, CYAN_DARK)
-    cross_h.line.fill.background()
-    cross_v = slide.shapes.add_shape(SHAPE.RECTANGLE, Inches(10.47), Inches(1.33), Inches(0.46), Inches(1.8))
-    set_fill(cross_v, CYAN_DARK)
-    cross_v.line.fill.background()
+    add_image_fit(slide, AI_MEDICAL_IMAGE, 8.15, 1.15, 4.25, 3.05)
 
-    add_text(slide, PROJECT_TITLE, 0.72, 1.55, 7.8, 0.75, 42, WHITE, True, FONT_TITLE)
+    add_text(slide, PROJECT_TITLE, 0.72, 1.28, 7.15, 0.75, 39, WHITE, True, FONT_TITLE)
     add_text(
         slide,
         "Retrieval-Augmented Generation for PubMed Medical Abstracts",
         0.78,
-        2.37,
+        2.10,
         7.2,
         0.35,
         15,
@@ -431,21 +635,26 @@ def create_cover(prs: Presentation) -> None:
             "Gradio chatbot interface",
         ],
         0.82,
-        3.15,
+        2.85,
         5.6,
         1.25,
-        15,
+        14,
         WHITE,
     )
-    add_text(slide, f"Prepared by: {PRESENTER_NAME}", 0.82, 5.60, 4.9, 0.30, 13, WHITE, True)
-    add_text(slide, UNIVERSITY_NAME, 0.82, 5.95, 6.4, 0.28, 11, MUTED)
-    add_chip(slide, "AI", 8.95, 4.90, 0.72)
-    add_chip(slide, "Healthcare", 9.78, 4.90, 1.15, GREEN)
-    add_chip(slide, "Cybersecurity Style", 11.08, 4.90, 1.62)
+    add_panel(slide, 0.82, 4.65, 7.05, 1.92, "Team Members")
+    for index, (name, student_id) in enumerate(TEAM_MEMBERS):
+        y = 5.05 + index * 0.25
+        add_text(slide, name, 1.10, y, 2.90, 0.16, 8, WHITE, True)
+        add_text(slide, student_id, 4.18, y, 1.10, 0.16, 8, CYAN, font=FONT_MONO)
+    add_text(slide, UNIVERSITY_NAME, 1.10, 6.34, 6.35, 0.16, 8, MUTED)
+
+    add_chip(slide, "AI", 8.45, 4.78, 0.72)
+    add_chip(slide, "Healthcare", 9.28, 4.78, 1.15, GREEN)
+    add_chip(slide, "Cybersecurity Style", 10.58, 4.78, 1.62)
 
     add_notes(
         slide,
-        "Open by introducing the project as a medical RAG chatbot that uses PubMed abstracts, embeddings, MongoDB, memory, and a Gradio UI.",
+        "Open by introducing the team and the project as a medical RAG chatbot that uses PubMed abstracts, embeddings, MongoDB, memory, and a Gradio UI.",
     )
     add_slide_transition(slide)
 
@@ -819,15 +1028,16 @@ def create_gradio_ui(prs: Presentation) -> None:
     add_background(slide, 11)
     add_title(slide, "Gradio UI", "User-facing chatbot interface")
 
-    add_screenshot_placeholder(
-        slide,
-        "Screenshot Placeholder: Gradio UI",
-        0.85,
-        1.45,
-        7.15,
-        4.95,
-        "Insert screenshot of the running chatbot at http://127.0.0.1:7860",
-    )
+    if not add_image_fit(slide, GUI_SCREENSHOT, 0.85, 1.45, 7.15, 4.95, "Gradio UI Screenshot"):
+        add_screenshot_placeholder(
+            slide,
+            "Screenshot Placeholder: Gradio UI",
+            0.85,
+            1.45,
+            7.15,
+            4.95,
+            "Insert screenshot of the running chatbot at http://127.0.0.1:7860",
+        )
 
     add_panel(slide, 8.45, 1.45, 3.95, 4.95, "UI Features")
     add_rich_text(
@@ -859,37 +1069,23 @@ def create_demo(prs: Presentation) -> None:
     add_background(slide, 12)
     add_title(slide, "Demo Flow", "Question -> Retrieval -> Answer")
 
-    add_screenshot_placeholder(
-        slide,
-        "Terminal Ingestion Output",
-        0.75,
-        1.45,
-        3.70,
-        2.15,
-        "Insert tqdm ingestion output screenshot",
-    )
-    add_screenshot_placeholder(
-        slide,
-        "MongoDB Collections",
-        4.80,
-        1.45,
-        3.70,
-        2.15,
-        "Insert MongoDB Compass screenshot",
-    )
-    add_screenshot_placeholder(
-        slide,
-        "Retrieved Chunks",
-        8.85,
-        1.45,
-        3.70,
-        2.15,
-        "Insert top 5 chunks/source panel",
-    )
+    if not add_image_fit(slide, OUTPUT_SCREENSHOT, 0.75, 1.35, 7.35, 4.10, "Real Chatbot Output Screenshot"):
+        add_screenshot_placeholder(
+            slide,
+            "Screenshot Placeholder: Chatbot Output",
+            0.75,
+            1.35,
+            7.35,
+            4.10,
+            "Insert screenshot after asking a question",
+        )
 
-    add_panel(slide, 1.20, 4.50, 10.95, 1.45, "Example Demo Script")
-    add_text(slide, 'Question: "What does the dataset say about obesity?"', 1.55, 4.95, 5.25, 0.22, 14, WHITE, True)
-    add_text(slide, "System: embed question -> retrieve top chunks -> build prompt -> stream grounded answer", 1.55, 5.34, 9.95, 0.25, 13, CYAN)
+    add_image_fit(slide, TERMINAL_IMAGE, 8.45, 1.35, 3.85, 1.80, "Ingestion Output")
+    add_image_fit(slide, MONGODB_IMAGE, 8.45, 3.38, 3.85, 2.07, "MongoDB Storage")
+
+    add_panel(slide, 0.95, 5.72, 11.55, 0.72, "Demo Script")
+    add_text(slide, 'Question: "What does the dataset say about obesity?"', 1.22, 5.95, 4.80, 0.18, 11, WHITE, True)
+    add_text(slide, "Embedding -> cosine retrieval -> top source chunks -> grounded streamed answer", 6.05, 5.95, 5.95, 0.18, 11, CYAN)
 
     add_notes(slide, "Use this slide while running a live demo or showing screenshots from ingestion, MongoDB, retrieval, and the UI.")
     add_slide_transition(slide)
@@ -1040,6 +1236,7 @@ def main() -> None:
     """Create the PowerPoint presentation."""
 
     OUTPUT_DIR.mkdir(exist_ok=True)
+    create_visual_assets()
     presentation = build_deck()
     presentation.save(OUTPUT_FILE)
     print(f"Created: {OUTPUT_FILE}")
