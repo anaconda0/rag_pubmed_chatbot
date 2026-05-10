@@ -24,9 +24,9 @@ logs/
 .ipynb_checkpoints/
 
 # Large local datasets
-# The Kaggle CSV files are intentionally not committed.
-# One CSV is larger than GitHub's 100 MB single-file limit.
+# Keep oversized processed CSV files out of GitHub.
 data/*.csv
+!data/PubMed Multi Label Text Classification Dataset.csv
 
 # Local model/cache folders if created inside the project
 models/
