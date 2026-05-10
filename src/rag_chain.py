@@ -70,6 +70,29 @@ STOPWORDS = {
     "with",
 }
 
+GENERIC_QUERY_WORDS = {
+    "abstract",
+    "abstracts",
+    "available",
+    "contain",
+    "contains",
+    "data",
+    "dataset",
+    "describe",
+    "discuss",
+    "information",
+    "mention",
+    "mentions",
+    "related",
+    "relationship",
+    "say",
+    "says",
+    "show",
+    "shows",
+    "studies",
+    "study",
+}
+
 MEDICAL_KEYWORDS = {
     "abstract",
     "analgesic",
@@ -320,8 +343,62 @@ def get_question_keywords(question: str) -> set[str]:
     return {
         word
         for word in words
-        if len(word) > 2 and word not in STOPWORDS
+        if (
+            len(word) > 2
+            and word not in STOPWORDS
+            and word not in GENERIC_QUERY_WORDS
+        )
     }
+
+
+def flatten_metadata_value(value: Any) -> str:
+    """Turn nested metadata values into text for keyword matching."""
+
+    if value is None:
+        return ""
+
+    if isinstance(value, dict):
+        return " ".join(flatten_metadata_value(item) for item in value.values())
+
+    if isinstance(value, list):
+        return " ".join(flatten_metadata_value(item) for item in value)
+
+    return str(value)
+
+
+def build_chunk_search_text(chunk: dict[str, Any]) -> str:
+    """Build one searchable text string from chunk text and metadata."""
+
+    metadata = chunk.get("metadata", {})
+    parts = [
+        chunk.get("text", ""),
+        flatten_metadata_value(metadata.get("title")),
+        flatten_metadata_value(metadata.get("labels")),
+    ]
+    return " ".join(parts).lower()
+
+
+def keyword_is_in_text(keyword: str, text: str) -> bool:
+    """Check if a keyword appears in text.
+
+    A substring check keeps the beginner implementation simple and also handles
+    close forms like "neoplasm" and "neoplasms".
+    """
+
+    return keyword.lower() in text
+
+
+def chunk_has_question_topic(
+    chunk: dict[str, Any],
+    keywords: set[str],
+) -> bool:
+    """Return True when a retrieved chunk contains the question's topic."""
+
+    if not keywords:
+        return True
+
+    chunk_search_text = build_chunk_search_text(chunk)
+    return any(keyword_is_in_text(keyword, chunk_search_text) for keyword in keywords)
 
 
 def split_into_sentences(text: str) -> list[str]:
@@ -335,7 +412,11 @@ def sentence_relevance_score(sentence: str, keywords: set[str]) -> int:
     """Score a sentence by how many question keywords it contains."""
 
     sentence_lower = sentence.lower()
-    return sum(1 for keyword in keywords if keyword in sentence_lower)
+    return sum(
+        1
+        for keyword in keywords
+        if keyword_is_in_text(keyword, sentence_lower)
+    )
 
 
 def select_answer_sentences(
@@ -353,11 +434,20 @@ def select_answer_sentences(
         if chunk_score < MIN_RETRIEVAL_SCORE:
             continue
 
+        # Do not use a semantically retrieved chunk if it never mentions the
+        # question's actual topic. This prevents unrelated opioid text from
+        # being used to answer a depression question.
+        if not chunk_has_question_topic(chunk, keywords):
+            continue
+
         for sentence in split_into_sentences(chunk.get("text", "")):
             if len(sentence) < 20:
                 continue
 
             keyword_score = sentence_relevance_score(sentence, keywords)
+            if keywords and keyword_score == 0:
+                continue
+
             combined_score = keyword_score + chunk_score
             candidates.append((combined_score, chunk_index, sentence))
 
@@ -380,6 +470,28 @@ def select_answer_sentences(
     return selected_sentences
 
 
+def filter_chunks_for_question(
+    question: str,
+    chunks: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Keep only retrieved chunks that can actually support the answer."""
+
+    keywords = get_question_keywords(question)
+    filtered_chunks = []
+
+    for chunk in chunks:
+        chunk_score = float(chunk.get("score", 0.0))
+        if chunk_score < MIN_RETRIEVAL_SCORE:
+            continue
+
+        if not chunk_has_question_topic(chunk, keywords):
+            continue
+
+        filtered_chunks.append(chunk)
+
+    return filtered_chunks
+
+
 def generate_final_answer(
     question: str,
     chunks: list[dict[str, Any]],
@@ -397,7 +509,11 @@ def generate_final_answer(
     if best_score < MIN_RETRIEVAL_SCORE:
         return NOT_ENOUGH_INFORMATION_MESSAGE
 
-    selected_sentences = select_answer_sentences(question, chunks)
+    topic_matching_chunks = filter_chunks_for_question(question, chunks)
+    if not topic_matching_chunks:
+        return NOT_ENOUGH_INFORMATION_MESSAGE
+
+    selected_sentences = select_answer_sentences(question, topic_matching_chunks)
     if not selected_sentences:
         return NOT_ENOUGH_INFORMATION_MESSAGE
 
@@ -479,6 +595,7 @@ def run_rag_pipeline(
         }
 
     dataset_chunks = retrieve_similar_chunks(question, top_k=5)
+    answer_chunks = filter_chunks_for_question(question, dataset_chunks)
 
     # Retrieve older memories before saving the current user question, so the
     # current question does not appear as its own older memory.
@@ -499,12 +616,12 @@ def run_rag_pipeline(
 
     final_prompt = build_prompt(
         question=question,
-        chunks=dataset_chunks,
+        chunks=answer_chunks,
         short_term_messages=short_term_for_prompt,
         long_term_memories=long_term_memories,
     )
 
-    final_answer = generate_final_answer(question, dataset_chunks)
+    final_answer = generate_final_answer(question, answer_chunks)
 
     if save_to_memory:
         memory_manager.add_assistant_message(final_answer)
@@ -513,7 +630,8 @@ def run_rag_pipeline(
         "question": question,
         "answer": final_answer,
         "prompt": final_prompt,
-        "dataset_chunks": dataset_chunks,
+        "dataset_chunks": answer_chunks,
+        "retrieved_chunks": dataset_chunks,
         "short_term_messages": short_term_for_prompt,
         "long_term_memories": long_term_memories,
         "memory_after_answer": memory_manager.get_short_term_messages(),

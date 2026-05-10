@@ -60,6 +60,7 @@ TEXT_COLUMN_CANDIDATES = [
 ]
 
 LIST_LABEL_COLUMNS = ["meshMajor", "meshroot", "labels", "Labels", "categories"]
+SEARCH_COLUMNS = ["Title", "abstractText", "meshMajor", "meshroot"]
 
 
 def find_csv_files(data_dir: Path = DATA_DIR) -> list[Path]:
@@ -106,6 +107,36 @@ def read_dataset(csv_path: Path, limit: int | None = None) -> pd.DataFrame:
     """Read the CSV into a pandas DataFrame."""
 
     return pd.read_csv(csv_path, low_memory=False, nrows=limit)
+
+
+def filter_dataset_by_search(
+    dataframe: pd.DataFrame,
+    search_text: str,
+) -> pd.DataFrame:
+    """Keep rows where the topic appears in title, abstract, or labels."""
+
+    search_text = search_text.strip()
+    if not search_text:
+        return dataframe
+
+    existing_columns = [
+        column for column in SEARCH_COLUMNS if column in dataframe.columns
+    ]
+
+    if not existing_columns:
+        raise ValueError(
+            f"None of the searchable columns were found: {SEARCH_COLUMNS}"
+        )
+
+    combined_text = (
+        dataframe[existing_columns]
+        .fillna("")
+        .astype(str)
+        .agg(" ".join, axis=1)
+    )
+    mask = combined_text.str.contains(search_text, case=False, na=False)
+
+    return dataframe.loc[mask].copy()
 
 
 def detect_text_column(dataframe: pd.DataFrame) -> str:
@@ -322,11 +353,28 @@ def ingest_dataset(
     limit: int | None = None,
     inspect_only: bool = False,
     csv_name: str = CSV_FILE_NAME,
+    search_text: str = "",
 ) -> None:
     """Inspect the CSV and optionally ingest it into MongoDB."""
 
     csv_path = select_dataset_file(csv_name)
-    dataframe = read_dataset(csv_path, limit=limit)
+
+    # If searching by topic, read the full CSV first, filter matching rows,
+    # then apply --limit to the matched rows.
+    read_limit = None if search_text else limit
+    dataframe = read_dataset(csv_path, limit=read_limit)
+
+    if search_text:
+        dataframe = filter_dataset_by_search(dataframe, search_text)
+        print(f"\nRows matching '{search_text}': {len(dataframe)}")
+
+        if limit is not None:
+            dataframe = dataframe.head(limit)
+            print(f"Using first {len(dataframe)} matched rows because --limit was set.")
+
+        if dataframe.empty:
+            print("No matching rows found. Nothing to ingest.")
+            return
 
     text_column = detect_text_column(dataframe)
     inspect_dataset(dataframe, csv_path, text_column)
@@ -360,7 +408,12 @@ def ingest_dataset(
         unit="row",
     )
 
-    for row_number, (_, row) in enumerate(progress):
+    for _, (original_index, row) in enumerate(progress):
+        try:
+            row_index = int(original_index)
+        except (TypeError, ValueError):
+            row_index = int(_)
+
         raw_text = row.get(text_column)
         cleaned_text = clean_text(raw_text)
 
@@ -386,7 +439,7 @@ def ingest_dataset(
                     "text": chunk_text,
                     "chunk_hash": chunk_hash,
                     "source_file": csv_path.name,
-                    "row_index": row_number,
+                    "row_index": row_index,
                     "chunk_index": chunk_index,
                     "text_column": text_column,
                     "row": row,
@@ -449,6 +502,12 @@ def parse_args() -> argparse.Namespace:
         default=CSV_FILE_NAME,
         help="CSV file name inside data/. If omitted, the script auto-detects one.",
     )
+    parser.add_argument(
+        "--search",
+        type=str,
+        default="",
+        help="Only ingest rows containing this text in title, abstract, or labels.",
+    )
     return parser.parse_args()
 
 
@@ -460,6 +519,7 @@ def main() -> None:
         limit=args.limit,
         inspect_only=args.inspect_only,
         csv_name=args.csv,
+        search_text=args.search,
     )
 
 
