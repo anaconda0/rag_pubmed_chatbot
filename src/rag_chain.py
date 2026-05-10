@@ -38,6 +38,12 @@ NOT_ENOUGH_INFORMATION_MESSAGE = (
 # weak to trust. You can tune it from .env if needed.
 MIN_RETRIEVAL_SCORE = float(os.getenv("MIN_RETRIEVAL_SCORE", "0.15"))
 ENABLE_DOMAIN_GUARD = os.getenv("ENABLE_DOMAIN_GUARD", "true").lower() == "true"
+ENABLE_AUTO_TOPIC_INGEST = (
+    os.getenv("ENABLE_AUTO_TOPIC_INGEST", "true").lower() == "true"
+)
+AUTO_TOPIC_INGEST_LIMIT = int(os.getenv("AUTO_TOPIC_INGEST_LIMIT", "50"))
+RETRIEVAL_CANDIDATE_COUNT = int(os.getenv("RETRIEVAL_CANDIDATE_COUNT", "25"))
+AUTO_INGESTED_TOPICS: set[str] = set()
 
 STOPWORDS = {
     "a",
@@ -69,6 +75,76 @@ STOPWORDS = {
     "which",
     "with",
 }
+
+# Extra common words that are useful in English questions but not useful for
+# deciding whether a PubMed chunk matches the medical topic.
+STOPWORDS.update(
+    {
+        "about",
+        "above",
+        "after",
+        "again",
+        "all",
+        "also",
+        "any",
+        "around",
+        "because",
+        "been",
+        "before",
+        "being",
+        "below",
+        "between",
+        "can",
+        "could",
+        "did",
+        "do",
+        "does",
+        "doing",
+        "during",
+        "each",
+        "had",
+        "has",
+        "have",
+        "having",
+        "i",
+        "if",
+        "into",
+        "its",
+        "me",
+        "more",
+        "most",
+        "my",
+        "no",
+        "not",
+        "only",
+        "our",
+        "please",
+        "should",
+        "so",
+        "some",
+        "than",
+        "their",
+        "them",
+        "then",
+        "there",
+        "these",
+        "they",
+        "those",
+        "under",
+        "up",
+        "use",
+        "used",
+        "using",
+        "we",
+        "way",
+        "who",
+        "why",
+        "will",
+        "would",
+        "you",
+        "your",
+    }
+)
 
 GENERIC_QUERY_WORDS = {
     "abstract",
@@ -176,8 +252,30 @@ MEDICAL_KEYWORDS = {
     "vitamin",
 }
 
+MEDICAL_KEYWORDS.update(
+    {
+        "alzheimer",
+        "anxiety",
+        "arthritis",
+        "bmi",
+        "covid",
+        "dementia",
+        "depressive",
+        "hypertension",
+        "influenza",
+        "migraine",
+        "obese",
+        "pressure",
+        "renal",
+        "stroke",
+    }
+)
+
 MEDICAL_PHRASES = {
     "cervical cancer",
+    "body mass index",
+    "breast cancer",
+    "major depression",
     "vitamin d",
     "pubmed abstract",
     "medical abstract",
@@ -198,6 +296,33 @@ NON_MEDICAL_KEYWORDS = {
     "movie",
     "travel",
     "restaurant",
+}
+
+DATASET_REFERENCE_KEYWORDS = {
+    "abstract",
+    "abstracts",
+    "dataset",
+    "medical",
+    "pubmed",
+}
+
+LOW_VALUE_AUTO_INGEST_TERMS = {
+    "abstract",
+    "abstracts",
+    "clinical",
+    "dataset",
+    "disease",
+    "diseases",
+    "health",
+    "human",
+    "humans",
+    "medical",
+    "medicine",
+    "patient",
+    "patients",
+    "pubmed",
+    "study",
+    "treatment",
 }
 
 
@@ -231,9 +356,88 @@ def is_medical_or_pubmed_question(question: str) -> bool:
     if tokens & NON_MEDICAL_KEYWORDS:
         return False
 
+    # If the user explicitly asks about this dataset or PubMed abstracts, allow
+    # the CSV fallback to check whether the topic exists. This helps with
+    # medical terms that are not listed above yet.
+    if tokens & DATASET_REFERENCE_KEYWORDS:
+        topic_keywords = get_question_topic_keywords(question)
+        return bool(topic_keywords)
+
     # Unknown topics are rejected by default so the app stays focused on the
     # ingested PubMed dataset.
     return False
+
+
+def choose_auto_ingest_topic(question: str) -> str:
+    """Choose a simple search term for automatic topic ingestion.
+
+    The ingest script searches the CSV by text, so we use the most specific
+    question keyword we can find. This is deliberately simple and explainable.
+    """
+
+    question_lower = question.lower()
+
+    for phrase in sorted(MEDICAL_PHRASES, key=len, reverse=True):
+        if phrase in question_lower:
+            return phrase
+
+    keywords = list(get_question_topic_keywords(question))
+
+    if not keywords:
+        return ""
+
+    return sorted(keywords, key=len, reverse=True)[0]
+
+
+def auto_ingest_topic_from_csv(question: str) -> dict[str, Any]:
+    """Ingest matching CSV rows for a missing medical topic.
+
+    This is the safety net for when the local CSV contains a topic but MongoDB
+    does not yet have that topic embedded. The first question about a new topic
+    may take longer, but future questions use the newly stored MongoDB chunks.
+    """
+
+    if not ENABLE_AUTO_TOPIC_INGEST:
+        return {
+            "attempted": False,
+            "topic": "",
+            "stats": None,
+        }
+
+    topic = choose_auto_ingest_topic(question)
+    if not topic:
+        return {
+            "attempted": False,
+            "topic": "",
+            "stats": None,
+        }
+
+    if topic in AUTO_INGESTED_TOPICS:
+        return {
+            "attempted": False,
+            "topic": topic,
+            "stats": None,
+        }
+
+    print(f"Auto-ingesting PubMed rows for missing topic: {topic}")
+
+    try:
+        from src.ingest import ingest_dataset
+    except ModuleNotFoundError:  # Allows: python src/rag_chain.py
+        from ingest import ingest_dataset  # type: ignore
+
+    stats = ingest_dataset(
+        limit=AUTO_TOPIC_INGEST_LIMIT,
+        search_text=topic,
+    )
+
+    AUTO_INGESTED_TOPICS.add(topic)
+
+    return {
+        "attempted": True,
+        "topic": topic,
+        "stats": stats,
+    }
 
 
 def build_dataset_context(chunks: list[dict[str, Any]]) -> str:
@@ -351,6 +555,29 @@ def get_question_keywords(question: str) -> set[str]:
     }
 
 
+def get_question_topic_keywords(question: str) -> set[str]:
+    """Return the actual medical topic words from the question.
+
+    This is stricter than get_question_keywords(). It removes broad words such
+    as "dataset", "abstract", and "health", because those words can appear in
+    many unrelated records. The RAG answer should be grounded on the real topic,
+    such as "depression", "obesity", or "pregnancy".
+    """
+
+    keywords = {
+        keyword
+        for keyword in get_question_keywords(question)
+        if keyword not in LOW_VALUE_AUTO_INGEST_TERMS
+    }
+
+    question_lower = question.lower()
+    for phrase in MEDICAL_PHRASES:
+        if phrase in question_lower:
+            keywords.update(phrase.split())
+
+    return keywords
+
+
 def flatten_metadata_value(value: Any) -> str:
     """Turn nested metadata values into text for keyword matching."""
 
@@ -381,11 +608,22 @@ def build_chunk_search_text(chunk: dict[str, Any]) -> str:
 def keyword_is_in_text(keyword: str, text: str) -> bool:
     """Check if a keyword appears in text.
 
-    A substring check keeps the beginner implementation simple and also handles
-    close forms like "neoplasm" and "neoplasms".
+    Word boundaries prevent very short topics from matching unrelated words.
+    For example, "car" should not match "cardiac".
     """
 
-    return keyword.lower() in text
+    keyword = keyword.lower().strip()
+    if not keyword:
+        return False
+
+    escaped_keyword = re.escape(keyword)
+
+    if len(keyword) <= 3:
+        pattern = rf"\b{escaped_keyword}\b"
+    else:
+        pattern = rf"\b{escaped_keyword}(s|es)?\b"
+
+    return re.search(pattern, text.lower()) is not None
 
 
 def chunk_has_question_topic(
@@ -426,7 +664,7 @@ def select_answer_sentences(
 ) -> list[str]:
     """Select the most relevant sentences from retrieved chunks."""
 
-    keywords = get_question_keywords(question)
+    keywords = get_question_topic_keywords(question)
     candidates: list[tuple[float, int, str]] = []
 
     for chunk_index, chunk in enumerate(chunks):
@@ -476,7 +714,7 @@ def filter_chunks_for_question(
 ) -> list[dict[str, Any]]:
     """Keep only retrieved chunks that can actually support the answer."""
 
-    keywords = get_question_keywords(question)
+    keywords = get_question_topic_keywords(question)
     filtered_chunks = []
 
     for chunk in chunks:
@@ -587,6 +825,12 @@ def run_rag_pipeline(
             "answer": final_answer,
             "prompt": final_prompt,
             "dataset_chunks": [],
+            "retrieved_chunks": [],
+            "auto_ingest": {
+                "attempted": False,
+                "topic": "",
+                "stats": None,
+            },
             "short_term_messages": short_term_for_prompt,
             "long_term_memories": [],
             "memory_after_answer": memory_manager.get_short_term_messages(),
@@ -594,8 +838,30 @@ def run_rag_pipeline(
             "skip_reason": "Question is outside the PubMed/medical domain.",
         }
 
-    dataset_chunks = retrieve_similar_chunks(question, top_k=5)
-    answer_chunks = filter_chunks_for_question(question, dataset_chunks)
+    # Pull more than five candidates internally. Sentence embeddings can place
+    # a generic medical abstract near the top, so filtering a larger candidate
+    # set gives the actual topic a better chance. Only the best five supporting
+    # chunks are sent to the prompt and shown as sources.
+    dataset_chunks = retrieve_similar_chunks(
+        question,
+        top_k=RETRIEVAL_CANDIDATE_COUNT,
+    )
+    answer_chunks = filter_chunks_for_question(question, dataset_chunks)[:5]
+    auto_ingest_result = {
+        "attempted": False,
+        "topic": "",
+        "stats": None,
+    }
+
+    if not answer_chunks:
+        auto_ingest_result = auto_ingest_topic_from_csv(question)
+
+        if auto_ingest_result["attempted"]:
+            dataset_chunks = retrieve_similar_chunks(
+                question,
+                top_k=RETRIEVAL_CANDIDATE_COUNT,
+            )
+            answer_chunks = filter_chunks_for_question(question, dataset_chunks)[:5]
 
     # Retrieve older memories before saving the current user question, so the
     # current question does not appear as its own older memory.
@@ -632,6 +898,7 @@ def run_rag_pipeline(
         "prompt": final_prompt,
         "dataset_chunks": answer_chunks,
         "retrieved_chunks": dataset_chunks,
+        "auto_ingest": auto_ingest_result,
         "short_term_messages": short_term_for_prompt,
         "long_term_memories": long_term_memories,
         "memory_after_answer": memory_manager.get_short_term_messages(),

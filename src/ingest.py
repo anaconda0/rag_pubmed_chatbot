@@ -354,7 +354,7 @@ def ingest_dataset(
     inspect_only: bool = False,
     csv_name: str = CSV_FILE_NAME,
     search_text: str = "",
-) -> None:
+) -> dict[str, int]:
     """Inspect the CSV and optionally ingest it into MongoDB."""
 
     csv_path = select_dataset_file(csv_name)
@@ -374,14 +374,26 @@ def ingest_dataset(
 
         if dataframe.empty:
             print("No matching rows found. Nothing to ingest.")
-            return
+            return {
+                "rows_read": 0,
+                "empty_rows": 0,
+                "chunks_created": 0,
+                "duplicates": 0,
+                "inserted": 0,
+            }
 
     text_column = detect_text_column(dataframe)
     inspect_dataset(dataframe, csv_path, text_column)
 
     if inspect_only:
         print("\nInspect-only mode enabled. No chunks were written to MongoDB.")
-        return
+        return {
+            "rows_read": len(dataframe),
+            "empty_rows": 0,
+            "chunks_created": 0,
+            "duplicates": 0,
+            "inserted": 0,
+        }
 
     binary_label_columns = detect_binary_label_columns(dataframe)
     print(f"\nDetected binary label columns: {binary_label_columns}")
@@ -477,6 +489,14 @@ def ingest_dataset(
     print(f"New chunks inserted into MongoDB: {inserted_count}")
 
     client.close()
+
+    return {
+        "rows_read": len(dataframe),
+        "empty_rows": empty_row_count,
+        "chunks_created": total_chunk_count,
+        "duplicates": duplicate_count,
+        "inserted": inserted_count,
+    }
 
 
 def parse_args() -> argparse.Namespace:
