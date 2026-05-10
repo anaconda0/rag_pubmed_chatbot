@@ -406,13 +406,16 @@ def submit_question(
 
     chat_history = chat_history + [
         {"role": "user", "content": question},
-        {"role": "assistant", "content": "Retrieving relevant PubMed chunks..."},
+        {
+            "role": "assistant",
+            "content": "Checking question and retrieving PubMed chunks...",
+        },
     ]
 
     yield (
         chat_history,
         "",
-        "Retrieving sources...",
+        "Checking question...",
         format_prompt_history(session_state["prompt_history"]),
         session_state["session_id"],
         session_state,
@@ -425,7 +428,11 @@ def submit_question(
             save_to_memory=True,
         )
 
-        sources_text = format_sources(result["dataset_chunks"])
+        if result.get("skipped_retrieval"):
+            sources_text = result.get("skip_reason") or EMPTY_SOURCES_TEXT
+        else:
+            sources_text = format_sources(result["dataset_chunks"])
+
         session_state["prompt_history"].append(
             {
                 "time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),

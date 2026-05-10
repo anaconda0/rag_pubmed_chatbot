@@ -37,6 +37,7 @@ NOT_ENOUGH_INFORMATION_MESSAGE = (
 # If the best retrieved chunk is below this score, the answer is considered too
 # weak to trust. You can tune it from .env if needed.
 MIN_RETRIEVAL_SCORE = float(os.getenv("MIN_RETRIEVAL_SCORE", "0.15"))
+ENABLE_DOMAIN_GUARD = os.getenv("ENABLE_DOMAIN_GUARD", "true").lower() == "true"
 
 STOPWORDS = {
     "a",
@@ -68,6 +69,148 @@ STOPWORDS = {
     "which",
     "with",
 }
+
+MEDICAL_KEYWORDS = {
+    "abstract",
+    "analgesic",
+    "analgesics",
+    "anatomy",
+    "antibody",
+    "asthma",
+    "bacteria",
+    "biochemical",
+    "biomarker",
+    "blood",
+    "breast",
+    "cancer",
+    "cardiac",
+    "cardiovascular",
+    "cell",
+    "cells",
+    "cervical",
+    "chemotherapy",
+    "clinical",
+    "deficiency",
+    "depression",
+    "diabetes",
+    "diagnosis",
+    "disease",
+    "diseases",
+    "dna",
+    "dose",
+    "drug",
+    "enzyme",
+    "gene",
+    "genetic",
+    "genomic",
+    "health",
+    "heart",
+    "hpv",
+    "human",
+    "humans",
+    "hypovitaminosis",
+    "immunology",
+    "infant",
+    "infection",
+    "inflammation",
+    "kidney",
+    "lactation",
+    "medical",
+    "medicine",
+    "mesh",
+    "mice",
+    "molecular",
+    "mother",
+    "neonatal",
+    "neoplasm",
+    "neoplasms",
+    "obesity",
+    "opioid",
+    "pain",
+    "parathormone",
+    "patient",
+    "patients",
+    "peptide",
+    "peptides",
+    "p53",
+    "pharmacology",
+    "pregnancy",
+    "pregnant",
+    "protein",
+    "pubmed",
+    "receptor",
+    "receptors",
+    "serum",
+    "study",
+    "syndrome",
+    "therapy",
+    "tissue",
+    "treatment",
+    "tumor",
+    "tyr-pro",
+    "viral",
+    "virus",
+    "vitamin",
+}
+
+MEDICAL_PHRASES = {
+    "cervical cancer",
+    "vitamin d",
+    "pubmed abstract",
+    "medical abstract",
+    "opioid peptide",
+    "p53 expression",
+}
+
+NON_MEDICAL_KEYWORDS = {
+    "bake",
+    "cake",
+    "chocolate",
+    "cooking",
+    "recipe",
+    "football",
+    "capital",
+    "programming",
+    "game",
+    "movie",
+    "travel",
+    "restaurant",
+}
+
+
+def tokenize_question(question: str) -> set[str]:
+    """Convert a question into simple lowercase keyword tokens."""
+
+    return set(re.findall(r"[a-zA-Z][a-zA-Z0-9-]+", question.lower()))
+
+
+def is_medical_or_pubmed_question(question: str) -> bool:
+    """Quickly decide if a question belongs in this PubMed chatbot.
+
+    This guard is intentionally lightweight. It prevents obviously unrelated
+    questions, such as recipes, from loading the embedding model and scanning
+    MongoDB.
+    """
+
+    if not ENABLE_DOMAIN_GUARD:
+        return True
+
+    question_lower = question.lower()
+    tokens = tokenize_question(question)
+
+    if any(phrase in question_lower for phrase in MEDICAL_PHRASES):
+        return True
+
+    if tokens & MEDICAL_KEYWORDS:
+        return True
+
+    # If a question only contains obvious non-medical words, reject it quickly.
+    if tokens & NON_MEDICAL_KEYWORDS:
+        return False
+
+    # Unknown topics are rejected by default so the app stays focused on the
+    # ingested PubMed dataset.
+    return False
 
 
 def build_dataset_context(chunks: list[dict[str, Any]]) -> str:
@@ -296,6 +439,45 @@ def run_rag_pipeline(
     if not question:
         raise ValueError("Question cannot be empty.")
 
+    if not is_medical_or_pubmed_question(question):
+        if save_to_memory:
+            # Save out-of-domain messages only in short-term memory. They are
+            # not useful for future medical retrieval, and skipping long-term
+            # storage avoids embedding/MongoDB work for unrelated questions.
+            memory_manager.add_message(
+                "user",
+                question,
+                save_to_long_term=False,
+            )
+
+        short_term_for_prompt = memory_manager.get_short_term_messages()
+        final_prompt = build_prompt(
+            question=question,
+            chunks=[],
+            short_term_messages=short_term_for_prompt,
+            long_term_memories=[],
+        )
+        final_answer = NOT_ENOUGH_INFORMATION_MESSAGE
+
+        if save_to_memory:
+            memory_manager.add_message(
+                "assistant",
+                final_answer,
+                save_to_long_term=False,
+            )
+
+        return {
+            "question": question,
+            "answer": final_answer,
+            "prompt": final_prompt,
+            "dataset_chunks": [],
+            "short_term_messages": short_term_for_prompt,
+            "long_term_memories": [],
+            "memory_after_answer": memory_manager.get_short_term_messages(),
+            "skipped_retrieval": True,
+            "skip_reason": "Question is outside the PubMed/medical domain.",
+        }
+
     dataset_chunks = retrieve_similar_chunks(question, top_k=5)
 
     # Retrieve older memories before saving the current user question, so the
@@ -335,6 +517,8 @@ def run_rag_pipeline(
         "short_term_messages": short_term_for_prompt,
         "long_term_memories": long_term_memories,
         "memory_after_answer": memory_manager.get_short_term_messages(),
+        "skipped_retrieval": False,
+        "skip_reason": None,
     }
 
 

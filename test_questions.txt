@@ -1,0 +1,60 @@
+PubMed RAG Chatbot Test Questions
+=================================
+
+Questions that should work with the first 3 ingested rows:
+
+1. What does the dataset say about HPV and cervical cancer?
+
+2. Which HPV types are associated with cervical cancer?
+
+3. Does the dataset mention p53 expression in cervical cancer?
+
+4. What is the relationship between vitamin D deficiency and pregnancy?
+
+5. What percentage of pregnant women had hypovitaminosis D?
+
+6. How are maternal and infant vitamin D levels related?
+
+7. What does the dataset say about vitamin D status across pregnancy trimesters?
+
+8. What does the dataset mention about opioid peptides and pain?
+
+9. What is Tyr-Pro and what activity did it show?
+
+10. Did Tyr-Pro show opioid activity in vitro?
+
+
+Questions to try after full dataset ingestion:
+
+11. What does the dataset say about diabetes?
+
+12. What does the dataset mention about breast cancer?
+
+13. Are there studies related to Alzheimer disease?
+
+14. What information is available about hypertension?
+
+15. What does the dataset say about inflammation?
+
+16. Are there abstracts about heart disease?
+
+17. What does the dataset mention about asthma?
+
+18. Are there studies about kidney disease?
+
+19. What does the dataset say about obesity?
+
+20. Are there abstracts related to depression?
+
+
+Questions that should return "not enough information" if the topic is not in MongoDB:
+
+21. What does the dataset say about Mars colonization?
+
+22. What are the best programming languages for game development?
+
+23. What is the capital city of Japan?
+
+24. Who won the last football world cup?
+
+25. How do I bake chocolate cake?

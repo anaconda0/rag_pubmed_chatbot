@@ -16,6 +16,27 @@ except ModuleNotFoundError:  # Allows: python src/ingest.py
     )
 
 
+_MODEL_CACHE: dict[tuple[str, str | None], SentenceTransformer] = {}
+
+
+def load_sentence_transformer_model(model_name: str) -> SentenceTransformer:
+    """Load the sentence-transformers model once and reuse it.
+
+    Without this cache, the Gradio app can reload the same model multiple times
+    during one chat request. Caching makes repeated questions much faster.
+    """
+
+    cache_key = (model_name, EMBEDDING_DEVICE)
+
+    if cache_key not in _MODEL_CACHE:
+        _MODEL_CACHE[cache_key] = SentenceTransformer(
+            model_name,
+            device=EMBEDDING_DEVICE,
+        )
+
+    return _MODEL_CACHE[cache_key]
+
+
 class EmbeddingModel:
     """Small wrapper around SentenceTransformer.
 
@@ -25,7 +46,7 @@ class EmbeddingModel:
 
     def __init__(self, model_name: str = EMBEDDING_MODEL_NAME) -> None:
         self.model_name = model_name
-        self.model = SentenceTransformer(model_name, device=EMBEDDING_DEVICE)
+        self.model = load_sentence_transformer_model(model_name)
 
     def embed_texts(self, texts: list[str]) -> list[list[float]]:
         """Convert a list of text chunks into embedding vectors."""
