@@ -7,3 +7,4 @@ scikit-learn
 python-dotenv
 requests
 tqdm
+python-pptx
