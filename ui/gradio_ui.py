@@ -23,15 +23,240 @@ EMPTY_PROMPT_HISTORY_TEXT = "No prompts yet."
 
 
 APP_CSS = """
-.app-shell {
-    max-width: 1400px;
-    margin: 0 auto;
+:root {
+    --page-bg: #f6f7f9;
+    --panel-bg: #ffffff;
+    --panel-border: #d8dee6;
+    --text-main: #1f2937;
+    --text-muted: #64748b;
+    --accent: #0f766e;
+    --accent-dark: #115e59;
+    --accent-soft: #e6f4f1;
+    --source-soft: #fff7ed;
+    --source-border: #fed7aa;
 }
-.compact-panel textarea {
+
+body,
+.gradio-container {
+    background: var(--page-bg) !important;
+    color: var(--text-main) !important;
+}
+
+.gradio-container label,
+.gradio-container span,
+.gradio-container p,
+.gradio-container li,
+.gradio-container h1,
+.gradio-container h2,
+.gradio-container h3,
+.gradio-container h4,
+.gradio-container textarea,
+.gradio-container input {
+    color: var(--text-main) !important;
+}
+
+.gradio-container textarea,
+.gradio-container input {
+    background: #ffffff !important;
+    caret-color: var(--text-main) !important;
+}
+
+.app-shell {
+    max-width: 1480px;
+    margin: 0 auto;
+    padding: 18px 20px 22px;
+}
+
+.app-header {
+    border: 1px solid var(--panel-border);
+    border-left: 5px solid var(--accent);
+    background: var(--panel-bg);
+    border-radius: 8px;
+    padding: 14px 18px;
+    margin-bottom: 14px;
+    box-shadow: 0 1px 2px rgba(15, 23, 42, 0.05);
+}
+
+.app-header h1 {
+    margin: 0 0 4px;
+    font-size: 28px;
+    line-height: 1.2;
+    letter-spacing: 0;
+    color: var(--text-main);
+}
+
+.app-header p {
+    margin: 0;
+    color: var(--text-muted);
+    font-size: 14px;
+}
+
+.main-column,
+.side-column {
+    gap: 12px;
+}
+
+#chatbot {
+    border: 1px solid #334155;
+    border-radius: 8px;
+    background: #0f172a !important;
+    box-shadow: 0 1px 2px rgba(15, 23, 42, 0.05);
+}
+
+#chatbot *,
+#chatbot p,
+#chatbot li,
+#chatbot span,
+#chatbot .prose,
+#chatbot .message,
+#chatbot .message-content {
+    color: #f8fafc !important;
+}
+
+#chatbot button,
+#chatbot button * {
+    color: #f8fafc !important;
+}
+
+#chatbot [class*="message"],
+#chatbot [class*="bubble"],
+#chatbot [data-testid*="message"] {
+    border-color: #334155 !important;
+}
+
+#chatbot [class*="user"],
+#chatbot [data-testid*="user"] {
+    background: #334155 !important;
+    color: #f8fafc !important;
+}
+
+#chatbot [class*="bot"],
+#chatbot [class*="assistant"],
+#chatbot [data-testid*="bot"],
+#chatbot [data-testid*="assistant"] {
+    background: #111827 !important;
+    color: #f8fafc !important;
+}
+
+#question_box textarea {
+    border: 1px solid var(--panel-border) !important;
+    border-radius: 8px !important;
+    background: #ffffff !important;
+}
+
+#question_box textarea:focus {
+    border-color: var(--accent) !important;
+    box-shadow: 0 0 0 3px rgba(15, 118, 110, 0.12) !important;
+}
+
+#send_button,
+#clear_button,
+#new_session_button {
+    border-radius: 8px !important;
+    min-height: 42px;
+    font-weight: 600;
+}
+
+#send_button {
+    background: var(--accent) !important;
+    border-color: var(--accent) !important;
+    color: #ffffff !important;
+}
+
+#send_button * {
+    color: #ffffff !important;
+}
+
+#send_button:hover {
+    background: var(--accent-dark) !important;
+    border-color: var(--accent-dark) !important;
+}
+
+#clear_button,
+#new_session_button {
+    background: #ffffff !important;
+    border: 1px solid var(--panel-border) !important;
+    color: var(--text-main) !important;
+}
+
+#clear_button:hover,
+#new_session_button:hover {
+    background: var(--accent-soft) !important;
+    border-color: #99d4cb !important;
+}
+
+#session_box textarea {
+    background: var(--accent-soft) !important;
+    border: 1px solid #b7e3dc !important;
+    color: var(--accent-dark) !important;
     font-family: Consolas, Menlo, monospace;
     font-size: 13px;
 }
+
+#sources_panel,
+#prompt_history_panel {
+    border: 1px solid var(--panel-border);
+    border-radius: 8px;
+    background: var(--panel-bg);
+    box-shadow: 0 1px 2px rgba(15, 23, 42, 0.05);
+}
+
+#sources_panel {
+    max-height: 390px;
+    overflow-y: auto;
+    color: var(--text-main) !important;
+}
+
+#sources_panel * {
+    color: var(--text-main) !important;
+}
+
+#sources_panel h3 {
+    color: var(--accent-dark);
+    margin-top: 0;
+}
+
+#sources_panel code {
+    background: var(--source-soft);
+    border: 1px solid var(--source-border);
+    border-radius: 6px;
+    padding: 1px 5px;
+    color: #7c2d12 !important;
+}
+
+#prompt_history_panel textarea {
+    background: #fbfcfd !important;
+    border: 1px solid var(--panel-border) !important;
+    color: #111827 !important;
+    min-height: 420px !important;
+}
+
+.compact-panel textarea {
+    font-family: Consolas, Menlo, monospace;
+    font-size: 13px;
+    line-height: 1.45;
+}
+
+.tabs {
+    border-radius: 8px;
+}
+
+footer {
+    display: none !important;
+}
 """
+
+
+def build_theme() -> gr.Theme:
+    """Create a simple, clean Gradio theme."""
+
+    return gr.themes.Soft(
+        primary_hue="teal",
+        neutral_hue="slate",
+        radius_size="sm",
+        spacing_size="sm",
+        text_size="md",
+    )
 
 
 def create_session_state() -> dict[str, Any]:
@@ -291,15 +516,22 @@ def create_app() -> gr.Blocks:
         session_state = gr.State(value=None)
 
         with gr.Column(elem_classes=["app-shell"]):
-            gr.Markdown("# PubMed RAG Chatbot")
+            gr.Markdown(
+                """
+                # PubMed RAG Chatbot
+                Evidence-focused medical abstract search
+                """,
+                elem_classes=["app-header"],
+            )
 
             with gr.Row():
-                with gr.Column(scale=3):
+                with gr.Column(scale=3, elem_classes=["main-column"]):
                     chatbot = gr.Chatbot(
                         label="Chat",
                         height=560,
                         layout="bubble",
                         show_label=True,
+                        elem_id="chatbot",
                     )
 
                     with gr.Row():
@@ -310,33 +542,45 @@ def create_app() -> gr.Blocks:
                             max_lines=5,
                             autofocus=True,
                             scale=8,
+                            elem_id="question_box",
                         )
                         send_button = gr.Button(
                             "Send",
                             variant="primary",
                             scale=1,
+                            elem_id="send_button",
                         )
 
                     with gr.Row():
-                        clear_button = gr.Button("Clear")
-                        new_session_button = gr.Button("New Session")
+                        clear_button = gr.Button("Clear", elem_id="clear_button")
+                        new_session_button = gr.Button(
+                            "New Session",
+                            elem_id="new_session_button",
+                        )
 
-                with gr.Column(scale=2):
+                with gr.Column(scale=2, elem_classes=["side-column"]):
                     session_id_box = gr.Textbox(
                         label="Session",
                         interactive=False,
+                        elem_id="session_box",
                     )
-                    sources_panel = gr.Markdown(
-                        value=EMPTY_SOURCES_TEXT,
-                        label="Sources",
-                    )
-                    prompt_history_panel = gr.Textbox(
-                        value=EMPTY_PROMPT_HISTORY_TEXT,
-                        label="Prompt History",
-                        lines=18,
-                        interactive=False,
-                        elem_classes=["compact-panel"],
-                    )
+
+                    with gr.Tabs(elem_classes=["tabs"]):
+                        with gr.Tab("Sources"):
+                            sources_panel = gr.Markdown(
+                                value=EMPTY_SOURCES_TEXT,
+                                label="Sources",
+                                elem_id="sources_panel",
+                            )
+                        with gr.Tab("Prompt History"):
+                            prompt_history_panel = gr.Textbox(
+                                value=EMPTY_PROMPT_HISTORY_TEXT,
+                                label="Prompt History",
+                                lines=18,
+                                interactive=False,
+                                elem_id="prompt_history_panel",
+                                elem_classes=["compact-panel"],
+                            )
 
         demo.load(
             fn=initialize_ui,
@@ -379,3 +623,10 @@ def create_app() -> gr.Blocks:
         )
 
     return demo.queue()
+
+
+def launch_app(app: gr.Blocks | None = None) -> None:
+    """Launch the Gradio app with the UI theme and custom CSS."""
+
+    demo = app or create_app()
+    demo.launch(theme=build_theme(), css=APP_CSS)
